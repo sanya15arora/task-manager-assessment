@@ -60,7 +60,7 @@ export class AuthService {
         const decoded = verifyRefreshToken(refreshToken);
         const expiresAt = new Date(decoded.exp * 1000);
 
-        // store hashed refresh token in DB
+        // Store hashed refresh token in DB
         await prisma.refreshToken.create({
             data: {
                 tokenHash: hashToken(refreshToken),
@@ -69,36 +69,58 @@ export class AuthService {
             },
         });
 
-        return { accessToken, refreshToken, user: { id: user.id, email: user.email, name: user.name } };
+        return {
+            accessToken,
+            refreshToken,
+            user: { id: user.id, email: user.email, name: user.name }
+        };
     }
 
     // ROTATE REFRESH TOKEN
     static async rotateRefreshToken(oldToken: string) {
         const hashedOld = hashToken(oldToken);
 
-        const dbToken = await prisma.refreshToken.findUnique({ where: { tokenHash: hashedOld } });
+        const dbToken = await prisma.refreshToken.findUnique({
+            where: { tokenHash: hashedOld }
+        });
+
         if (!dbToken || dbToken.revoked || dbToken.expiresAt < new Date()) {
             const err: any = new Error("Refresh token invalid or expired");
             err.status = 401;
             throw err;
         }
 
-        // revoke old refresh token
-        await prisma.refreshToken.update({ where: { id: dbToken.id }, data: { revoked: true } });
+        // Revoke old refresh token
+        await prisma.refreshToken.update({
+            where: { id: dbToken.id },
+            data: { revoked: true }
+        });
 
-        // issue new refresh token
+        // Issue new refresh token
         const refreshToken = signRefreshToken({ userId: dbToken.userId });
         const decoded = verifyRefreshToken(refreshToken);
 
         await prisma.refreshToken.create({
-            data: { tokenHash: hashToken(refreshToken), expiresAt: new Date(decoded.exp * 1000), userId: dbToken.userId },
+            data: {
+                tokenHash: hashToken(refreshToken),
+                expiresAt: new Date(decoded.exp * 1000),
+                userId: dbToken.userId
+            },
         });
 
-        const accessToken = signAccessToken({ userId: dbToken.userId });
+        // Generate new access token with email included
         const user = await prisma.user.findUnique({
             where: { id: dbToken.userId },
             select: { id: true, email: true, name: true },
         });
+
+        if (!user) {
+            const err: any = new Error("User not found");
+            err.status = 404;
+            throw err;
+        }
+
+        const accessToken = signAccessToken({ userId: user.id, email: user.email });
 
         return { accessToken, refreshToken, user };
     }
@@ -106,6 +128,9 @@ export class AuthService {
     // REVOKE REFRESH TOKEN
     static async revokeRefreshToken(token: string) {
         const hashed = hashToken(token);
-        await prisma.refreshToken.updateMany({ where: { tokenHash: hashed }, data: { revoked: true } });
+        await prisma.refreshToken.updateMany({
+            where: { tokenHash: hashed },
+            data: { revoked: true }
+        });
     }
 }

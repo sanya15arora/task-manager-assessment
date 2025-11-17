@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "./authService";
 import { registerSchema, loginSchema } from "./authValidation";
+import { verifyRefreshToken } from "../../utils/jwt";
 
 const REFRESH_COOKIE_NAME = "jid";
 
@@ -9,7 +10,12 @@ export class AuthController {
     static async register(req: Request, res: Response, next: NextFunction) {
         try {
             const parsed = registerSchema.safeParse(req.body);
-            if (!parsed.success) return res.status(400).json({ message: "Validation failed", errors: parsed.error.issues });
+            if (!parsed.success) {
+                return res.status(400).json({
+                    message: "Validation failed",
+                    errors: parsed.error.issues
+                });
+            }
 
             const { name, email, password } = parsed.data;
             const user = await AuthService.register(name, email, password);
@@ -24,12 +30,17 @@ export class AuthController {
     static async login(req: Request, res: Response, next: NextFunction) {
         try {
             const parsed = loginSchema.safeParse(req.body);
-            if (!parsed.success) return res.status(400).json({ message: "Validation failed", errors: parsed.error.issues });
+            if (!parsed.success) {
+                return res.status(400).json({
+                    message: "Validation failed",
+                    errors: parsed.error.issues
+                });
+            }
 
             const { email, password } = parsed.data;
             const { accessToken, refreshToken, user } = await AuthService.login(email, password);
 
-            const payload: any = (await import("../../utils/jwt")).verifyRefreshToken(refreshToken);
+            const payload = verifyRefreshToken(refreshToken);
 
             res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
                 httpOnly: true,
@@ -49,10 +60,12 @@ export class AuthController {
     static async refresh(req: Request, res: Response, next: NextFunction) {
         try {
             const token = req.cookies[REFRESH_COOKIE_NAME];
-            if (!token) return res.status(401).json({ message: "Missing refresh token" });
+            if (!token) {
+                return res.status(401).json({ message: "Missing refresh token" });
+            }
 
             const { accessToken, refreshToken, user } = await AuthService.rotateRefreshToken(token);
-            const payload: any = (await import("../../utils/jwt")).verifyRefreshToken(refreshToken);
+            const payload = verifyRefreshToken(refreshToken);
 
             res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
                 httpOnly: true,
@@ -64,7 +77,9 @@ export class AuthController {
 
             return res.json({ accessToken, user });
         } catch (err: any) {
-            if (err.status === 401) return res.status(401).json({ message: "Invalid or expired refresh token" });
+            if (err.status === 401) {
+                return res.status(401).json({ message: "Invalid or expired refresh token" });
+            }
             next(err);
         }
     }
@@ -73,7 +88,9 @@ export class AuthController {
     static async logout(req: Request, res: Response, next: NextFunction) {
         try {
             const token = req.cookies[REFRESH_COOKIE_NAME];
-            if (token) await AuthService.revokeRefreshToken(token);
+            if (token) {
+                await AuthService.revokeRefreshToken(token);
+            }
 
             res.clearCookie(REFRESH_COOKIE_NAME, {
                 httpOnly: true,

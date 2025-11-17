@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { setAccessToken, apiFetch } from "@/lib/api";
+import { setAccessToken, apiFetch, clearAuth } from "@/lib/api";
 import { API_PATHS } from "@/lib/apiPath";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 type User = { id: number; name: string; email: string } | null;
 
@@ -13,6 +13,7 @@ type AuthContextType = {
     register: (name: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
     loading: boolean;
+    isAuthenticated: boolean;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
+    const pathname = usePathname();
 
     // Initialize auth on app load
     useEffect(() => {
@@ -28,24 +30,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
                 const res = await fetch(API_PATHS.AUTH.REFRESH, {
                     method: "POST",
-                    credentials: "include", // send jid cookie
+                    credentials: "include",
                 });
 
                 if (!res.ok) {
                     setUser(null);
+                    setAccessToken(null);
                     return;
                 }
 
                 const data = await res.json();
                 setAccessToken(data.accessToken);
                 setUser(data.user ?? null);
-
-                if (data.user) {
-                    router.replace("/tasks");
-                }
             } catch (err) {
                 console.error("Refresh token failed:", err);
                 setUser(null);
+                setAccessToken(null);
             } finally {
                 setLoading(false);
             }
@@ -65,7 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
 
             const data = await res.json();
-            if (!res.ok) throw new Error(data?.message || "Login failed");
+            if (!res.ok) {
+                throw new Error(data?.message || "Login failed");
+            }
 
             setAccessToken(data.accessToken);
             setUser(data.user ?? null);
@@ -88,11 +90,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
 
             const data = await res.json();
-            if (!res.ok) throw new Error(data?.message || "Registration failed");
+            if (!res.ok) {
+                throw new Error(data?.message || "Registration failed");
+            }
 
-            setAccessToken(data.accessToken);
-            setUser(data.user ?? null);
-            router.replace("/tasks");
+            // Registration doesn't return tokens, so login after successful registration
+            await login(email, password);
         } catch (err) {
             console.error("Registration error:", err);
             throw err;
@@ -109,14 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (err) {
             console.error("Logout error:", err);
         } finally {
-            setAccessToken(null);
+            clearAuth();
             setUser(null);
             router.replace("/auth/login");
         }
     };
 
+    const isAuthenticated = !!user;
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, loading, isAuthenticated }}>
             {children}
         </AuthContext.Provider>
     );
@@ -125,6 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 // Hook to use auth context
 export function useAuth() {
     const ctx = useContext(AuthContext);
-    if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+    if (!ctx) {
+        throw new Error("useAuth must be used within AuthProvider");
+    }
     return ctx;
 }
