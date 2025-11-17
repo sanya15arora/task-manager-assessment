@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { setAccessToken, apiFetch, clearAuth } from "@/lib/api";
 import { API_PATHS } from "@/lib/apiPath";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 type User = { id: number; name: string; email: string } | null;
 
@@ -22,7 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
-    const pathname = usePathname();
 
     // Initialize auth on app load
     useEffect(() => {
@@ -33,9 +32,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     credentials: "include",
                 });
 
-                if (!res.ok) {
+                // Silently fail if no refresh token (user not logged in)
+                if (res.status === 401) {
                     setUser(null);
                     setAccessToken(null);
+                    setLoading(false);
+                    return;
+                }
+
+                if (!res.ok) {
+                    console.error("Refresh failed:", await res.text());
+                    setUser(null);
+                    setAccessToken(null);
+                    setLoading(false);
                     return;
                 }
 
@@ -94,7 +103,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 throw new Error(data?.message || "Registration failed");
             }
 
-            // Registration doesn't return tokens, so login after successful registration
             await login(email, password);
         } catch (err) {
             console.error("Registration error:", err);
@@ -127,7 +135,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 }
 
-// Hook to use auth context
 export function useAuth() {
     const ctx = useContext(AuthContext);
     if (!ctx) {

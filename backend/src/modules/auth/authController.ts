@@ -45,7 +45,7 @@ export class AuthController {
             res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
-                sameSite: "lax",
+                sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
                 expires: new Date(payload.exp * 1000),
                 path: "/",
             });
