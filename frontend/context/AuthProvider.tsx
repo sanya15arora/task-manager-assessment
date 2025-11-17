@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { setAccessToken, apiFetch } from "@/lib/api";
 import { API_PATHS } from "@/lib/apiPath";
 import { useRouter } from "next/navigation";
@@ -17,18 +17,18 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    // Initialize auth state by refreshing access token if cookie exists
+    // Initialize auth on app load
     useEffect(() => {
         const initAuth = async () => {
             try {
                 const res = await fetch(API_PATHS.AUTH.REFRESH, {
                     method: "POST",
-                    credentials: "include", // send HTTP-only refresh cookie
+                    credentials: "include", // send jid cookie
                 });
 
                 if (!res.ok) {
@@ -37,8 +37,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
 
                 const data = await res.json();
-                if (data.accessToken) setAccessToken(data.accessToken);
+                setAccessToken(data.accessToken);
                 setUser(data.user ?? null);
+
+                if (data.user) {
+                    router.replace("/tasks");
+                }
             } catch (err) {
                 console.error("Refresh token failed:", err);
                 setUser(null);
@@ -50,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         initAuth();
     }, []);
 
+    // Login function
     const login = async (email: string, password: string) => {
         try {
             const res = await fetch(API_PATHS.AUTH.LOGIN, {
@@ -64,12 +69,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             setAccessToken(data.accessToken);
             setUser(data.user ?? null);
+
+            router.replace("/tasks");
         } catch (err) {
-            console.error(err);
+            console.error("Login error:", err);
             throw err;
         }
     };
 
+    // Register function
     const register = async (name: string, email: string, password: string) => {
         try {
             const res = await fetch(API_PATHS.AUTH.REGISTER, {
@@ -84,24 +92,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             setAccessToken(data.accessToken);
             setUser(data.user ?? null);
+            router.replace("/tasks");
         } catch (err) {
-            console.error(err);
+            console.error("Registration error:", err);
             throw err;
         }
     };
 
+    // Logout function
     const logout = async () => {
         try {
             await apiFetch(API_PATHS.AUTH.LOGOUT, {
                 method: "POST",
                 credentials: "include",
             });
-        } catch (e) {
-            console.error("Logout error:", e);
+        } catch (err) {
+            console.error("Logout error:", err);
         } finally {
             setAccessToken(null);
             setUser(null);
-            router.replace("/login");
+            router.replace("/auth/login");
         }
     };
 
@@ -112,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 }
 
+// Hook to use auth context
 export function useAuth() {
     const ctx = useContext(AuthContext);
     if (!ctx) throw new Error("useAuth must be used within AuthProvider");
